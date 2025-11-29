@@ -162,6 +162,7 @@ function App() {
   const [showExpiredCompetition, setShowExpiredCompetition] = useState(false);
   const [showLeaveCompetitionWarning, setShowLeaveCompetitionWarning] = useState(false);
   const [pendingGameId, setPendingGameId] = useState<number | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   // Funcions per gestionar localStorage (múltiples jocs)
   const saveGameState = (gameState: GameState) => {
@@ -505,6 +506,7 @@ function App() {
             clearCompetitionInfo();
             const exists = await loadCompetitionState(compId);
             if (exists) {
+              setJoinError(null);
               setShowNamePrompt(true);
             } else {
               setShowExpiredCompetition(true);
@@ -796,11 +798,12 @@ function App() {
       await joinCompetitionWebSocket(compId);
 
       setShowNamePrompt(false);
+      setJoinError(null);
     } catch (error) {
       if (error instanceof Error) {
-        setError(error.message);
+        setJoinError(error.message);
       } else {
-        setError('Hi ha un error en unir-se a la competició');
+        setJoinError('Hi ha un error en unir-se a la competició');
       }
       console.error(error);
     }
@@ -1732,13 +1735,13 @@ function App() {
           <div className="competition-content">
             <h3>Unir-se a Competició</h3>
             <p>Introduïu el nom per unir-vos a aquesta competició:</p>
-            {error && <div className="error">{error}</div>}
+            {joinError && <div className="error">{joinError}</div>}
             <input
               type="text"
               value={playerName}
               onChange={(e) => {
                 setPlayerName(e.target.value);
-                setError(null); // Netejar error quan l'usuari escriu
+                setJoinError(null); // Netejar error quan l'usuari escriu
               }}
               placeholder="Nom..."
               maxLength={20}
@@ -1763,6 +1766,19 @@ function App() {
                 disabled={!playerName.trim()}
               >
                 Uneix-me
+              </button>
+              <button
+                onClick={() => {
+                  // Tanca el modal i continua en mode no competitiu
+                  setShowNamePrompt(false);
+                  setCompetitionPlayers([]);
+                  setJoinError(null);
+                  // Neteja el paràmetre de competició de la URL
+                  window.history.pushState({}, '', window.location.pathname);
+                }}
+                className="cancel"
+              >
+                Juga sense competir
               </button>
             </div>
           </div>
