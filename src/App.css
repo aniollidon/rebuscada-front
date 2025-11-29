@@ -9,6 +9,44 @@ body {
   color: #333;
 }
 
+/* Bàner de versió alfa (subtil i fàcil de treure) */
+.alpha-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(90deg, #fff9c4, #fff4b8);
+  color: #5d5317;
+  font-size: 0.7rem;
+  padding: 0.35rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  z-index: 3000;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid #e6d98d;
+  letter-spacing: 0.3px;
+  font-weight: 500;
+}
+
+.alpha-banner button {
+  background: transparent;
+  border: none;
+  color: #8a7c24;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.45rem;
+  line-height: 1;
+  border-radius: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.alpha-banner button:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #5d5317;
+}
+
 .App {
   text-align: center;
   min-height: 100vh;

@@ -124,6 +124,10 @@ function fromRoman(roman: string): number | null {
 
 function App() {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Control del bàner de versió alfa (es pot ocultar amb REACT_APP_SHOW_ALPHA_BANNER=false)
+  const [showAlphaBanner, setShowAlphaBanner] = useState(
+    process.env.REACT_APP_SHOW_ALPHA_BANNER === 'false' ? false : true
+  );
   const [guess, setGuess] = useState('');
   const [intents, setIntents] = useState<Intent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1305,6 +1309,18 @@ function App() {
 
   return (
     <div className="App">
+      {showAlphaBanner && (
+        <div className="alpha-banner" role="note">
+          <span>Versió alfa: pot contenir errors i encara no està pensada per compartir.</span>
+          <button
+            type="button"
+            aria-label="Amaga bàner alfa"
+            onClick={() => setShowAlphaBanner(false)}
+          >
+            ×
+          </button>
+        </div>
+      )}
       <h1>Rebuscada</h1>
       {!gameWon ? (
         <header className="App-header">
