@@ -1311,7 +1311,7 @@ function App() {
     <div className="App">
       {showAlphaBanner && (
         <div className="alpha-banner" role="note">
-          <span>Versió alfa: pot contenir errors i encara no està pensada per compartir.</span>
+          <span>Esteu jugant a la versió alfa del joc la rebuscada.cat: pot contenir errors i encara no està pensada per compartir.</span>
           <button
             type="button"
             aria-label="Amaga bàner alfa"
