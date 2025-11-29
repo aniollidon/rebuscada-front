@@ -48,6 +48,7 @@ interface CompetitionInfo {
   comp_id: string;
   rebuscada: string;
   nom_jugador: string;
+  game_id?: number | null;
 }
 
 interface GuessResponse {
@@ -191,13 +192,19 @@ function App() {
     return null;
   };
 
-  // Actualitza la URL mantenint paràmetres i posant comp/joc quan calgui
+  // Actualitza la URL. Si hi ha compId, NO inclou el joc (enllaç net de competició)
   const updateUrlParams = (params: { compId?: string | null; gameId?: number | null }) => {
     const url = new URL(window.location.href);
     if (params.compId !== undefined) {
-      if (params.compId) url.searchParams.set('comp', params.compId); else url.searchParams.delete('comp');
-    }
-    if (params.gameId !== undefined) {
+      if (params.compId) {
+        url.searchParams.set('comp', params.compId);
+        // En mode competició eliminem sempre 'joc' per simplicitat d'enllaç
+        url.searchParams.delete('joc');
+      } else {
+        url.searchParams.delete('comp');
+      }
+    } else if (params.gameId !== undefined) {
+      // Només establir joc si NO estem processant compId
       if (params.gameId) url.searchParams.set('joc', toRoman(params.gameId)); else url.searchParams.delete('joc');
     }
     window.history.pushState({}, '', url.toString());
@@ -629,13 +636,10 @@ function App() {
             setCompetitionInfo(savedCompInfo);
             // Connectar WebSocket en aquesta pestanya també
             joinCompetitionWebSocket(savedCompInfo.comp_id);
-            // Actualitzar URL per reflectir la competició i el joc
+            // Actualitzar URL per reflectir la competició (sense joc)
             const urlCompId = getCompIdFromUrl();
             if (urlCompId !== savedCompInfo.comp_id) {
-              resolveGameIdByRebuscada(savedCompInfo.rebuscada).then((gid) => {
-                if (gid) setCurrentGameId(gid);
-                updateUrlParams({ compId: savedCompInfo.comp_id, gameId: gid });
-              });
+              updateUrlParams({ compId: savedCompInfo.comp_id });
             }
           }
         } else if (!savedCompInfo && competitionInfo) {
@@ -669,18 +673,10 @@ function App() {
         const players = Object.values(data.jugadors) as PlayerCompetition[];
         setCompetitionPlayers(players);
         console.log('Jugadors carregats via HTTP:', players);
-        // Configurar la rebuscada i l'ID de joc perquè la UI mostri el joc correcte
-        if (data.rebuscada) {
-          setRebuscadaActual(data.rebuscada);
-          resolveGameIdByRebuscada(data.rebuscada).then((gid) => {
-            if (gid) {
-              setCurrentGameId(gid);
-              updateUrlParams({ compId, gameId: gid });
-            } else {
-              updateUrlParams({ compId, gameId: null });
-            }
-          });
-        }
+        // Configurar rebuscada i game_id directament de la competició
+        if (data.rebuscada) setRebuscadaActual(data.rebuscada);
+        if (data.game_id) setCurrentGameId(data.game_id);
+        updateUrlParams({ compId });
         return { exists: true, rebuscada: data.rebuscada || null };
       } else if (response.status === 404) {
         // Competició no trobada (probablement caducada)
@@ -777,8 +773,8 @@ function App() {
       setCompetitionInfo(compInfo);
       saveCompetitionInfo(compInfo);
 
-      // Actualitzar URL amb comp i joc actual
-      updateUrlParams({ compId: data.comp_id, gameId: currentGameId });
+      // Actualitzar URL només amb comp (sense joc)
+      updateUrlParams({ compId: data.comp_id });
 
       // Connectar WebSocket
       await joinCompetitionWebSocket(data.comp_id);
@@ -818,7 +814,8 @@ function App() {
       const compInfo: CompetitionInfo = {
         comp_id: data.comp_id,
         rebuscada: data.rebuscada,
-        nom_jugador: name.trim()
+        nom_jugador: name.trim(),
+        game_id: data.game_id ?? null
       };
 
       setCompetitionInfo(compInfo);
@@ -832,18 +829,15 @@ function App() {
       }
       
       setRebuscadaActual(data.rebuscada);
-      const gid = await resolveGameIdByRebuscada(data.rebuscada);
-      if (gid) {
-        setCurrentGameId(gid);
-      }
+      if (data.game_id) setCurrentGameId(data.game_id);
 
       // Connectar WebSocket
       await joinCompetitionWebSocket(compId);
 
       setShowNamePrompt(false);
       setJoinError(null);
-      // Actualitzar URL amb comp i joc
-      updateUrlParams({ compId, gameId: gid ?? currentGameId });
+      // Actualitzar URL només amb comp
+      updateUrlParams({ compId });
     } catch (error) {
       if (error instanceof Error) {
         setJoinError(error.message);
