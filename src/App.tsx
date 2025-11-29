@@ -176,6 +176,33 @@ function App() {
     }
   };
 
+  // Resol l'ID de joc a partir del nom de la rebuscada
+  const resolveGameIdByRebuscada = async (name: string): Promise<number | null> => {
+    try {
+      const response = await fetch(`${SERVER_URL}/public-games`);
+      if (response.ok) {
+        const data = await response.json();
+        const game = (data.games || []).find((g: any) => (g.name || '').toLowerCase() === name.toLowerCase());
+        return game ? game.id : null;
+      }
+    } catch (e) {
+      console.warn('Error resolent ID de joc per rebuscada:', e);
+    }
+    return null;
+  };
+
+  // Actualitza la URL mantenint paràmetres i posant comp/joc quan calgui
+  const updateUrlParams = (params: { compId?: string | null; gameId?: number | null }) => {
+    const url = new URL(window.location.href);
+    if (params.compId !== undefined) {
+      if (params.compId) url.searchParams.set('comp', params.compId); else url.searchParams.delete('comp');
+    }
+    if (params.gameId !== undefined) {
+      if (params.gameId) url.searchParams.set('joc', toRoman(params.gameId)); else url.searchParams.delete('joc');
+    }
+    window.history.pushState({}, '', url.toString());
+  };
+
   const loadGameState = (gameId: number): GameState | null => {
     try {
       const allGames = loadAllGamesState();
@@ -580,10 +607,10 @@ function App() {
       // Només sincronitzar si és el mateix joc i la mateixa paraula
       if (e.key === GAMES_STATE_KEY && currentGameId !== null && rebuscadaActual) {
         const savedState = loadGameState(currentGameId);
-        
+
         // Verificar que és el mateix joc abans d'actualitzar
         if (savedState && savedState.rebuscada === rebuscadaActual && savedState.gameId === currentGameId) {
-          console.log('Sincronitzant estat des d\'altra pestanya');
+          console.log('Sincronitzant estat d\'altra pestanya');
           setIntents(savedState.intents);
           setFormesCanoniquesProvades(new Set(savedState.formesCanoniquesProvades));
           setPistesDonades(savedState.pistesDonades);
@@ -591,22 +618,24 @@ function App() {
           setSurrendered(savedState.surrendered);
         }
       }
-      
+
       // Sincronitzar informació de competició
       if (e.key === COMPETITION_KEY) {
         const savedCompInfo = loadCompetitionInfo();
         if (savedCompInfo && savedCompInfo.rebuscada === rebuscadaActual) {
           // Una altra pestanya s'ha unit a una competició
           if (!competitionInfo || competitionInfo.comp_id !== savedCompInfo.comp_id) {
-            console.log('Sincronitzant competició des d\'altra pestanya:', savedCompInfo.comp_id);
+            console.log('Sincronitzant competició d\'altra pestanya:', savedCompInfo.comp_id);
             setCompetitionInfo(savedCompInfo);
             // Connectar WebSocket en aquesta pestanya també
             joinCompetitionWebSocket(savedCompInfo.comp_id);
-            // Actualitzar URL per reflectir la competició
+            // Actualitzar URL per reflectir la competició i el joc
             const urlCompId = getCompIdFromUrl();
             if (urlCompId !== savedCompInfo.comp_id) {
-              const newUrl = `${window.location.pathname}?comp=${savedCompInfo.comp_id}`;
-              window.history.pushState({}, '', newUrl);
+              resolveGameIdByRebuscada(savedCompInfo.rebuscada).then((gid) => {
+                if (gid) setCurrentGameId(gid);
+                updateUrlParams({ compId: savedCompInfo.comp_id, gameId: gid });
+              });
             }
           }
         } else if (!savedCompInfo && competitionInfo) {
@@ -632,7 +661,7 @@ function App() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [currentGameId, rebuscadaActual, competitionInfo, wsConnection]);
 
-  const loadCompetitionState = async (compId: string) => {
+  const loadCompetitionState = async (compId: string): Promise<{ exists: boolean; rebuscada: string | null }> => {
     try {
       const response = await fetch(`${SERVER_URL}/competition/${compId}`);
       if (response.ok) {
@@ -640,21 +669,33 @@ function App() {
         const players = Object.values(data.jugadors) as PlayerCompetition[];
         setCompetitionPlayers(players);
         console.log('Jugadors carregats via HTTP:', players);
-        return true;
+        // Configurar la rebuscada i l'ID de joc perquè la UI mostri el joc correcte
+        if (data.rebuscada) {
+          setRebuscadaActual(data.rebuscada);
+          resolveGameIdByRebuscada(data.rebuscada).then((gid) => {
+            if (gid) {
+              setCurrentGameId(gid);
+              updateUrlParams({ compId, gameId: gid });
+            } else {
+              updateUrlParams({ compId, gameId: null });
+            }
+          });
+        }
+        return { exists: true, rebuscada: data.rebuscada || null };
       } else if (response.status === 404) {
         // Competició no trobada (probablement caducada)
-        return false;
+        return { exists: false, rebuscada: null };
       }
     } catch (error) {
       console.error('Error carregant estat de competició:', error);
     }
-    return false;
+    return { exists: false, rebuscada: null };
   };
 
   const joinCompetitionWebSocket = async (compId: string) => {
     // Primer, carregar l'estat via HTTP
-    const exists = await loadCompetitionState(compId);
-    if (!exists) {
+    const result = await loadCompetitionState(compId);
+    if (!result.exists) {
       // Competició caducada
       setShowExpiredCompetition(true);
       clearCompetitionInfo();
@@ -699,7 +740,6 @@ function App() {
       console.error('Error connectant WebSocket:', error);
     }
   };
-
   const handleCreateCompetition = async () => {
     if (!playerName.trim()) {
       setError('Introduïu un nom');
@@ -737,9 +777,8 @@ function App() {
       setCompetitionInfo(compInfo);
       saveCompetitionInfo(compInfo);
 
-      // Actualitzar URL
-      const newUrl = `${window.location.pathname}?comp=${data.comp_id}`;
-      window.history.pushState({}, '', newUrl);
+      // Actualitzar URL amb comp i joc actual
+      updateUrlParams({ compId: data.comp_id, gameId: currentGameId });
 
       // Connectar WebSocket
       await joinCompetitionWebSocket(data.comp_id);
@@ -793,12 +832,18 @@ function App() {
       }
       
       setRebuscadaActual(data.rebuscada);
+      const gid = await resolveGameIdByRebuscada(data.rebuscada);
+      if (gid) {
+        setCurrentGameId(gid);
+      }
 
       // Connectar WebSocket
       await joinCompetitionWebSocket(compId);
 
       setShowNamePrompt(false);
       setJoinError(null);
+      // Actualitzar URL amb comp i joc
+      updateUrlParams({ compId, gameId: gid ?? currentGameId });
     } catch (error) {
       if (error instanceof Error) {
         setJoinError(error.message);
@@ -1663,14 +1708,14 @@ function App() {
             <div className="competition-link">
               <input
                 type="text"
-                value={`${window.location.origin}${window.location.pathname}?comp=${competitionInfo.comp_id}`}
+                value={`${window.location.origin}${window.location.pathname}?comp=${competitionInfo.comp_id}${currentGameId ? `&joc=${toRoman(currentGameId)}` : ''}`}
                 readOnly
                 onClick={(e) => e.currentTarget.select()}
               />
               <button
                 className={linkCopied ? 'copied' : ''}
                 onClick={() => {
-                  const link = `${window.location.origin}${window.location.pathname}?comp=${competitionInfo.comp_id}`;
+                  const link = `${window.location.origin}${window.location.pathname}?comp=${competitionInfo.comp_id}${currentGameId ? `&joc=${toRoman(currentGameId)}` : ''}`;
                   navigator.clipboard.writeText(link);
                   setLinkCopied(true);
                   setTimeout(() => {
