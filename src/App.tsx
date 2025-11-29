@@ -1702,14 +1702,14 @@ function App() {
             <div className="competition-link">
               <input
                 type="text"
-                value={`${window.location.origin}${window.location.pathname}?comp=${competitionInfo.comp_id}${currentGameId ? `&joc=${toRoman(currentGameId)}` : ''}`}
+                value={`${window.location.origin}${window.location.pathname}?comp=${competitionInfo.comp_id}`}
                 readOnly
                 onClick={(e) => e.currentTarget.select()}
               />
               <button
                 className={linkCopied ? 'copied' : ''}
                 onClick={() => {
-                  const link = `${window.location.origin}${window.location.pathname}?comp=${competitionInfo.comp_id}${currentGameId ? `&joc=${toRoman(currentGameId)}` : ''}`;
+                  const link = `${window.location.origin}${window.location.pathname}?comp=${competitionInfo.comp_id}`;
                   navigator.clipboard.writeText(link);
                   setLinkCopied(true);
                   setTimeout(() => {
