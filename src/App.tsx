@@ -504,7 +504,7 @@ function App() {
         // Carregar estat del joc i sortir
         const savedState = loadGameState(gameInfo.id);
         console.log('Estat guardat per aquest joc:', savedState);
-        if (savedState) {
+        if (savedState && savedState.rebuscada === gameInfo.name) {
           setIntents(savedState.intents);
           setFormesCanoniquesProvades(new Set(savedState.formesCanoniquesProvades));
           setPistesDonades(savedState.pistesDonades);
