@@ -364,7 +364,7 @@ function App() {
     if (customWord) {
       try {
         // Descodificar base64
-        const decodedWord = atob(customWord);
+        const decodedWord = decodeURIComponent(atob(customWord));
         
         // Per paraules personalitzades, assumim que són vàlides
         // (si l'usuari té l'enllaç, hauria de poder jugar-hi)
