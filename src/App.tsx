@@ -406,11 +406,8 @@ function App() {
           startDate: data.startDate
         }));
         
-        // Calcular l'ID del joc d'avui
-        const startDate = new Date(data.startDate.split('-').reverse().join('-'));
-        const today = new Date(data.today.split('-').reverse().join('-'));
-        const daysDiff = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-        const todayGameId = daysDiff + 1;
+        // Usar l'ID del joc actual calculat pel servidor (suporta jocs diaris i setmanals)
+        const todayGameId = data.currentGameId || 1;
         
         // Filtrar jocs fins avui (inclòs) i ordenar de més alt a més baix
         const previous = allGames
