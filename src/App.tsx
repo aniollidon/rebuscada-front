@@ -75,6 +75,22 @@ const GAMES_STATE_KEY = 'rebuscada-games-state'; // Ara guarda tots els jocs
 const COMPETITION_KEY = 'rebuscada-competition';
 const CURRENT_GAME_ID_KEY = 'rebuscada-current-game-id';
 const VERSION_KEY = 'rebuscada-api-version';
+const SESSION_ID_KEY = 'rebuscada-session-id';
+
+// Genera o recupera un ID de sessió persistent per estadístiques
+function getSessionId(): string {
+  let sessionId = localStorage.getItem(SESSION_ID_KEY);
+  if (!sessionId) {
+    sessionId = 'sid-' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+    localStorage.setItem(SESSION_ID_KEY, sessionId);
+  }
+  return sessionId;
+}
+
+// Helper per afegir headers d'estadístiques a les peticions fetch
+function statsHeaders(): Record<string, string> {
+  return { 'X-Session-Id': getSessionId() };
+}
 
 // Converteix un número a números romans
 function toRoman(num: number): string {
@@ -473,6 +489,15 @@ function App() {
       
       setCurrentGameId(gameInfo.id);
       setRebuscadaActual(gameInfo.name);
+      
+      // Registrar visita per estadístiques
+      try {
+        fetch(`${SERVER_URL}/visit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...statsHeaders() },
+          body: JSON.stringify({ rebuscada: gameInfo.name, game_id: gameInfo.id })
+        }).catch(() => {}); // Fire and forget
+      } catch {}
       
       // Debug info (abans de tot)
       console.log('=== DEBUG INFO ===');
@@ -1025,7 +1050,7 @@ function App() {
 
       const response = await fetch(`${SERVER_URL}/guess`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...statsHeaders() },
         body: JSON.stringify(requestBody)
       });
       const data: GuessResponse = await response.json();
@@ -1176,7 +1201,7 @@ function App() {
 
       const response = await fetch(`${SERVER_URL}/pista`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...statsHeaders() },
         body: JSON.stringify(requestBody)
       });
       const data: PistaResponse = await response.json();
@@ -1252,6 +1277,7 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...statsHeaders()
         },
         body: JSON.stringify(requestBody),
       });
