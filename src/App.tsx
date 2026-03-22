@@ -173,7 +173,21 @@ function App() {
   const [showCompetitionExplanation, setShowCompetitionExplanation] = useState(false);
   const [competitionInfo, setCompetitionInfo] = useState<CompetitionInfo | null>(null);
   const [competitionPlayers, setCompetitionPlayers] = useState<PlayerCompetition[]>([]);
-  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
+  const wsConnectionRef = useRef<WebSocket | null>(null);
+  const wsReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Tanca el WebSocket i cancel·la la reconnexió automàtica
+  const closeWebSocket = () => {
+    if (wsReconnectTimerRef.current) {
+      clearTimeout(wsReconnectTimerRef.current);
+      wsReconnectTimerRef.current = null;
+    }
+    if (wsConnectionRef.current) {
+      wsConnectionRef.current.close();
+      wsConnectionRef.current = null;
+    }
+  };
+
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
@@ -515,10 +529,7 @@ function App() {
         const savedCompInfo = loadCompetitionInfo();
         if (savedCompInfo) {
           clearCompetitionInfo();
-          if (wsConnection) {
-            wsConnection.close();
-            setWsConnection(null);
-          }
+          closeWebSocket();
           setCompetitionInfo(null);
           setCompetitionPlayers([]);
         }
@@ -541,60 +552,74 @@ function App() {
       // Comprovar si estem en mode competició
       const compId = getCompIdFromUrl();
       const savedCompInfo = loadCompetitionInfo();
-      
-      // Si el joc ha canviat i tenim competició guardada, sortir de la competició
-      if (savedCompInfo && savedCompInfo.rebuscada !== gameInfo.name) {
-        clearCompetitionInfo();
-        if (wsConnection) {
-          wsConnection.close();
-          setWsConnection(null);
+
+      // Helper per carregar l'estat local del joc associat a una competició
+      const loadGameStateForComp = (compGameId: number | null, compRebuscada: string | null) => {
+        if (compGameId && compRebuscada) {
+          const state = loadGameState(compGameId);
+          if (state && state.rebuscada === compRebuscada) {
+            setIntents(state.intents);
+            setFormesCanoniquesProvades(new Set(state.formesCanoniquesProvades));
+            setPistesDonades(state.pistesDonades);
+            setGameWon(state.gameWon);
+            setSurrendered(state.surrendered);
+            return;
+          }
         }
-        setCompetitionInfo(null);
-        setCompetitionPlayers([]);
-      }
-      
+        resetGameState();
+      };
+
       if (compId) {
-        // Mode competició des d'URL
+        // URL té ?comp= - la competició defineix el joc
         if (savedCompInfo && savedCompInfo.comp_id === compId) {
-          // Ja tenim info guardada d'aquesta competició
-          if (savedCompInfo.rebuscada === gameInfo.name) {
-            // Mateixa paraula - recuperar competició
+          // Mateixa competició guardada - recuperar directament
+          // (la competició defineix la paraula, ignorem si gameInfo.name és diferent)
+          const result = await loadCompetitionState(compId);
+          if (result.exists) {
             setCompetitionInfo(savedCompInfo);
             await joinCompetitionWebSocket(compId);
+            loadGameStateForComp(result.game_id, result.rebuscada);
           } else {
-            // Paraula diferent - netejar i comprovar si existeix
+            // Competició caducada
             clearCompetitionInfo();
-            const exists = await loadCompetitionState(compId);
-            if (exists) {
-              setJoinError(null);
-              setShowNamePrompt(true);
-            } else {
-              setShowExpiredCompetition(true);
-            }
+            setShowExpiredCompetition(true);
           }
+          return;
         } else if (savedCompInfo && savedCompInfo.comp_id !== compId) {
           // Diferent competició - preguntar si vol canviar
           setPendingCompId(compId);
           setShowSwitchCompetition(true);
+          return;
         } else {
-          // No hi ha savedCompInfo - comprovar si existeix la competició
-          const exists = await loadCompetitionState(compId);
-          if (exists) {
+          // Cap info guardada - comprovar si existeix la competició
+          const result = await loadCompetitionState(compId);
+          if (result.exists) {
+            // Carregar l'estat del joc de la competició (l'usuari pot tenir intents previs)
+            loadGameStateForComp(result.game_id, result.rebuscada);
             setShowNamePrompt(true);
           } else {
-            // Competició caducada
             setShowExpiredCompetition(true);
           }
+          return;
         }
-      } else if (savedCompInfo && savedCompInfo.rebuscada === gameInfo.name) {
-        // No hi ha compId a URL però tenim competició guardada vàlida - recuperar
-        setCompetitionInfo(savedCompInfo);
-        await joinCompetitionWebSocket(savedCompInfo.comp_id);
-        // Actualitzar URL per reflectir la competició
-        const newUrl = `${window.location.pathname}?comp=${savedCompInfo.comp_id}`;
-        window.history.pushState({}, '', newUrl);
+      } else if (savedCompInfo) {
+        // No hi ha ?comp= a URL, però tenim competició guardada
+        // Comprovar si la competició encara existeix al servidor
+        const result = await loadCompetitionState(savedCompInfo.comp_id);
+        if (result.exists) {
+          // Competició encara viva - recuperar
+          setCompetitionInfo(savedCompInfo);
+          await joinCompetitionWebSocket(savedCompInfo.comp_id);
+          updateUrlParams({ compId: savedCompInfo.comp_id });
+          loadGameStateForComp(result.game_id, result.rebuscada);
+          return;
+        } else {
+          // Competició caducada - netejar i continuar amb el joc del dia
+          clearCompetitionInfo();
+        }
       }
       
+      // Carregar estat del joc actual (mode no-competició o competició caducada)
       const savedState = loadGameState(gameInfo.id);
       console.log('Estat guardat per aquest joc (mode normal):', savedState);
       
@@ -671,10 +696,7 @@ function App() {
         } else if (!savedCompInfo && competitionInfo) {
           // Una altra pestanya ha sortit de la competició
           console.log('Sortint de competició per sincronització amb altra pestanya');
-          if (wsConnection) {
-            wsConnection.close();
-            setWsConnection(null);
-          }
+          closeWebSocket();
           setCompetitionInfo(null);
           setCompetitionPlayers([]);
           // Eliminar comp_id de la URL
@@ -689,9 +711,9 @@ function App() {
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [currentGameId, rebuscadaActual, competitionInfo, wsConnection]);
+  }, [currentGameId, rebuscadaActual, competitionInfo]);
 
-  const loadCompetitionState = async (compId: string): Promise<{ exists: boolean; rebuscada: string | null }> => {
+  const loadCompetitionState = async (compId: string): Promise<{ exists: boolean; rebuscada: string | null; game_id: number | null }> => {
     try {
       const response = await fetch(`${SERVER_URL}/competition/${compId}`);
       if (response.ok) {
@@ -703,15 +725,15 @@ function App() {
         if (data.rebuscada) setRebuscadaActual(data.rebuscada);
         if (data.game_id) setCurrentGameId(data.game_id);
         updateUrlParams({ compId });
-        return { exists: true, rebuscada: data.rebuscada || null };
+        return { exists: true, rebuscada: data.rebuscada || null, game_id: data.game_id || null };
       } else if (response.status === 404) {
         // Competició no trobada (probablement caducada)
-        return { exists: false, rebuscada: null };
+        return { exists: false, rebuscada: null, game_id: null };
       }
     } catch (error) {
       console.error('Error carregant estat de competició:', error);
     }
-    return { exists: false, rebuscada: null };
+    return { exists: false, rebuscada: null, game_id: null };
   };
 
   const joinCompetitionWebSocket = async (compId: string) => {
@@ -725,9 +747,14 @@ function App() {
     }
 
     try {
-      // Tancar connexió anterior si n'hi ha
-      if (wsConnection) {
-        wsConnection.close();
+      // Tancar connexió anterior si n'hi ha (sense cancel·lar reconnexió, ja en creem una nova)
+      if (wsReconnectTimerRef.current) {
+        clearTimeout(wsReconnectTimerRef.current);
+        wsReconnectTimerRef.current = null;
+      }
+      if (wsConnectionRef.current) {
+        wsConnectionRef.current.close();
+        wsConnectionRef.current = null;
       }
 
       const wsUrl = SERVER_URL.replace('http', 'ws').replace('https', 'wss') + `/ws/competition/${compId}`;
@@ -754,10 +781,22 @@ function App() {
 
       ws.onclose = () => {
         console.log('WebSocket desconnectat');
-        setWsConnection(null);
+        wsConnectionRef.current = null;
+        // Reconnexió automàtica després de 3 segons si encara tenim competició
+        const savedComp = loadCompetitionInfo();
+        if (savedComp) {
+          if (wsReconnectTimerRef.current) clearTimeout(wsReconnectTimerRef.current);
+          wsReconnectTimerRef.current = setTimeout(() => {
+            const currentComp = loadCompetitionInfo();
+            if (currentComp && currentComp.comp_id === compId) {
+              console.log('Intentant reconnexió WebSocket...');
+              joinCompetitionWebSocket(compId);
+            }
+          }, 3000);
+        }
       };
 
-      setWsConnection(ws);
+      wsConnectionRef.current = ws;
     } catch (error) {
       console.error('Error connectant WebSocket:', error);
     }
@@ -793,7 +832,8 @@ function App() {
       const compInfo: CompetitionInfo = {
         comp_id: data.comp_id,
         rebuscada: data.rebuscada,
-        nom_jugador: playerName.trim()
+        nom_jugador: playerName.trim(),
+        game_id: data.game_id ?? null
       };
 
       setCompetitionInfo(compInfo);
@@ -847,15 +887,26 @@ function App() {
       setCompetitionInfo(compInfo);
       saveCompetitionInfo(compInfo);
       
-      // Si la paraula és diferent, netejar els intents
+      // Si la paraula és diferent, netejar els intents en memòria
       if (rebuscadaActual && data.rebuscada !== rebuscadaActual) {
         console.log(`Paraula canviada de '${rebuscadaActual}' a '${data.rebuscada}' - netejant intents`);
         resetGameState();
-        clearGameState();
       }
       
       setRebuscadaActual(data.rebuscada);
       if (data.game_id) setCurrentGameId(data.game_id);
+
+      // Carregar estat del joc de la competició si no tenim intents carregats
+      if (intents.length === 0 && data.game_id) {
+        const compGameState = loadGameState(data.game_id);
+        if (compGameState && compGameState.rebuscada === data.rebuscada) {
+          setIntents(compGameState.intents);
+          setFormesCanoniquesProvades(new Set(compGameState.formesCanoniquesProvades));
+          setPistesDonades(compGameState.pistesDonades);
+          setGameWon(compGameState.gameWon);
+          setSurrendered(compGameState.surrendered);
+        }
+      }
 
       // Connectar WebSocket
       await joinCompetitionWebSocket(compId);
@@ -888,10 +939,7 @@ function App() {
       }
 
       // Tancar WebSocket
-      if (wsConnection) {
-        wsConnection.close();
-        setWsConnection(null);
-      }
+      closeWebSocket();
 
       // Netejar estat de competició
       clearCompetitionInfo();
@@ -934,10 +982,7 @@ function App() {
       }
 
       // Tancar WebSocket
-      if (wsConnection) {
-        wsConnection.close();
-        setWsConnection(null);
-      }
+      closeWebSocket();
 
       // Netejar estat de competició
       clearCompetitionInfo();
@@ -963,16 +1008,35 @@ function App() {
       }
 
       // Tancar WebSocket
-      if (wsConnection) {
-        wsConnection.close();
-        setWsConnection(null);
-      }
+      closeWebSocket();
     }
 
     // Netejar estat
     clearCompetitionInfo();
     setCompetitionInfo(null);
     setCompetitionPlayers([]);
+
+    // Carregar estat de la nova competició i el joc corresponent
+    if (pendingCompId) {
+      const result = await loadCompetitionState(pendingCompId);
+      if (result.exists && result.game_id && result.rebuscada) {
+        const state = loadGameState(result.game_id);
+        if (state && state.rebuscada === result.rebuscada) {
+          setIntents(state.intents);
+          setFormesCanoniquesProvades(new Set(state.formesCanoniquesProvades));
+          setPistesDonades(state.pistesDonades);
+          setGameWon(state.gameWon);
+          setSurrendered(state.surrendered);
+        } else {
+          resetGameState();
+        }
+      } else if (!result.exists) {
+        // Competició caducada entre el moment de mostrar el modal i ara
+        setShowSwitchCompetition(false);
+        setShowExpiredCompetition(true);
+        return;
+      }
+    }
 
     // Mostrar prompt per unir-se a la nova competició
     setShowSwitchCompetition(false);
@@ -1314,14 +1378,12 @@ function App() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  // Tancar connexió WebSocket quan es desmunta el component
+  // Tancar connexió WebSocket i timers de reconnexió quan es desmunta el component
   React.useEffect(() => {
     return () => {
-      if (wsConnection) {
-        wsConnection.close();
-      }
+      closeWebSocket();
     };
-  }, [wsConnection]);
+  }, []);
 
   // Reiniciar estat de linkCopied quan es tanca el modal
   React.useEffect(() => {
