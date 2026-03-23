@@ -42,6 +42,7 @@ interface PlayerCompetition {
   pistes: number;
   estat_joc: string;  // "jugant", "guanyat" o "rendit"
   millor_posicio: number | null;
+  paraules?: { paraula: string; posicio: number; es_pista: boolean }[];
 }
 
 interface CompetitionInfo {
@@ -198,6 +199,8 @@ function App() {
   const [showLeaveCompetitionWarning, setShowLeaveCompetitionWarning] = useState(false);
   const [pendingGameId, setPendingGameId] = useState<number | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [nameConflict, setNameConflict] = useState<{ te_paraules: boolean } | null>(null);
+  const [verificationWord, setVerificationWord] = useState('');
 
   // Funcions per gestionar localStorage (múltiples jocs)
   const saveGameState = (gameState: GameState) => {
@@ -819,7 +822,8 @@ function App() {
             forma_canonica: i.forma_canonica,
             posicio: i.posicio,
             total_paraules: i.total_paraules,
-            es_correcta: i.es_correcta
+            es_correcta: i.es_correcta,
+            es_pista: i.es_pista || false
           }))
         })
       });
@@ -854,26 +858,51 @@ function App() {
     }
   };
 
-  const handleJoinCompetition = async (compId: string, name: string) => {
+  const handleJoinCompetition = async (compId: string, name: string, paraulaVerificacio?: string) => {
     try {
+      const body: any = {
+        nom_jugador: name.trim(),
+        intents_existents: intents.map(i => ({
+          paraula: i.paraula,
+          forma_canonica: i.forma_canonica,
+          posicio: i.posicio,
+          total_paraules: i.total_paraules,
+          es_correcta: i.es_correcta,
+          es_pista: i.es_pista || false
+        }))
+      };
+      if (paraulaVerificacio) {
+        body.paraula_verificacio = paraulaVerificacio;
+      }
+
       const response = await fetch(`${SERVER_URL}/competition/${compId}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nom_jugador: name.trim(),
-          intents_existents: intents.map(i => ({
-            paraula: i.paraula,
-            forma_canonica: i.forma_canonica,
-            posicio: i.posicio,
-            total_paraules: i.total_paraules,
-            es_correcta: i.es_correcta
-          }))
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Hi ha un error en unir-se a la competició');
+        
+        // Gestionar conflicte de nom (409)
+        if (response.status === 409 && errorData.detail?.nom_existent) {
+          setNameConflict({ te_paraules: errorData.detail.te_paraules });
+          if (!errorData.detail.te_paraules) {
+            setJoinError('Aquest nom ja està en ús. Tria un altre nom.');
+          } else {
+            setJoinError('Aquest nom ja està en ús. Per verificar que ets tu, introdueix una de les paraules que has provat.');
+          }
+          return;
+        }
+        
+        // Error de verificació (403)
+        if (response.status === 403) {
+          setJoinError('La paraula de verificació no és correcta. Torna-ho a provar.');
+          return;
+        }
+        
+        const msg = typeof errorData.detail === 'string' ? errorData.detail : 'Hi ha un error en unir-se a la competició';
+        throw new Error(msg);
       }
 
       const data = await response.json();
@@ -913,6 +942,8 @@ function App() {
 
       setShowNamePrompt(false);
       setJoinError(null);
+      setNameConflict(null);
+      setVerificationWord('');
       // Actualitzar URL només amb comp
       updateUrlParams({ compId });
     } catch (error) {
@@ -929,28 +960,20 @@ function App() {
     if (!competitionInfo) return;
 
     try {
-      const response = await fetch(
+      await fetch(
         `${SERVER_URL}/competition/${competitionInfo.comp_id}/leave?nom_jugador=${encodeURIComponent(competitionInfo.nom_jugador)}`,
         { method: 'POST' }
-      );
-
-      if (!response.ok) {
-        throw new Error('No s\'ha pogut sortir de la competició');
-      }
+      ).catch(() => {});
 
       // Tancar WebSocket
       closeWebSocket();
 
       // Netejar estat de competició
       clearCompetitionInfo();
-      setCompetitionInfo(null);
-      setCompetitionPlayers([]);
 
-      // Eliminar comp_id de la URL
-      const newUrl = window.location.pathname;
-      window.history.pushState({}, '', newUrl);
-
+      // Recarregar la pàgina per reinicialitzar amb el joc del dia
       setShowLeaveConfirm(false);
+      window.location.href = window.location.pathname;
     } catch (error) {
       setError('Hi ha un error en sortir de la competició');
       console.error(error);
@@ -1007,40 +1030,16 @@ function App() {
         console.error('Error sortint de competició anterior:', error);
       }
 
-      // Tancar WebSocket
       closeWebSocket();
     }
 
-    // Netejar estat
     clearCompetitionInfo();
-    setCompetitionInfo(null);
-    setCompetitionPlayers([]);
 
-    // Carregar estat de la nova competició i el joc corresponent
+    // Navegar a la nova competició amb recàrrega completa per evitar desincronització
     if (pendingCompId) {
-      const result = await loadCompetitionState(pendingCompId);
-      if (result.exists && result.game_id && result.rebuscada) {
-        const state = loadGameState(result.game_id);
-        if (state && state.rebuscada === result.rebuscada) {
-          setIntents(state.intents);
-          setFormesCanoniquesProvades(new Set(state.formesCanoniquesProvades));
-          setPistesDonades(state.pistesDonades);
-          setGameWon(state.gameWon);
-          setSurrendered(state.surrendered);
-        } else {
-          resetGameState();
-        }
-      } else if (!result.exists) {
-        // Competició caducada entre el moment de mostrar el modal i ara
-        setShowSwitchCompetition(false);
-        setShowExpiredCompetition(true);
-        return;
-      }
+      setShowSwitchCompetition(false);
+      window.location.href = `?comp=${encodeURIComponent(pendingCompId)}`;
     }
-
-    // Mostrar prompt per unir-se a la nova competició
-    setShowSwitchCompetition(false);
-    setShowNamePrompt(true);
   };
 
   const sortPlayers = (players: PlayerCompetition[]): PlayerCompetition[] => {
@@ -1718,24 +1717,41 @@ function App() {
             </p>
           ) : (
             <ul className="competition-players compact">
-              {sortPlayers(competitionPlayers).map((player, idx) => (
+              {sortPlayers(competitionPlayers).map((player, idx) => {
+                const currentPlayerFinished = competitionPlayers.find(p => p.nom === competitionInfo.nom_jugador);
+                const showWords = currentPlayerFinished && currentPlayerFinished.estat_joc !== 'jugant' && player.paraules && player.paraules.length > 0;
+                return (
                 <li key={idx} className={player.nom === competitionInfo.nom_jugador ? 'current-player' : ''}>
-                  <span className="player-name">{player.nom}</span>
-                  {player.millor_posicio !== null && (
-                    <span 
-                      className="player-position" 
-                      style={{ color: getPosicioColor(player.millor_posicio) }}
-                    >
-                      #{player.millor_posicio}
+                  <div className="player-row">
+                    <span className="player-name">{player.nom}</span>
+                    {player.millor_posicio !== null && (
+                      <span 
+                        className="player-position" 
+                        style={{ color: getPosicioColor(player.millor_posicio) }}
+                      >
+                        #{player.millor_posicio}
+                      </span>
+                    )}
+                    <span className="player-info">
+                      ({player.intents}i{player.pistes > 0 && `, ${player.pistes}p`})
                     </span>
+                    {player.estat_joc === "guanyat" && <span className="player-won"> ✓</span>}
+                    {player.estat_joc === "rendit" && <span className="player-surrendered"> ✗</span>}
+                  </div>
+                  {showWords && (
+                    <ul className="player-words">
+                      {player.paraules!.map((w, wIdx) => (
+                        <li key={wIdx} className={w.es_pista ? 'word-pista' : ''}>
+                          <span className="word-text">{w.paraula}</span>
+                          <span className="word-pos" style={{ color: getPosicioColor(w.posicio) }}>#{w.posicio}</span>
+                          {w.es_pista && <span className="word-hint-tag">pista</span>}
+                        </li>
+                      ))}
+                    </ul>
                   )}
-                  <span className="player-info">
-                    ({player.intents}i{player.pistes > 0 && `, ${player.pistes}p`})
-                  </span>
-                  {player.estat_joc === "guanyat" && <span className="player-won"> ✓</span>}
-                  {player.estat_joc === "rendit" && <span className="player-surrendered"> ✗</span>}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
           <button 
@@ -1874,53 +1890,135 @@ function App() {
         <div className="competition-modal" role="dialog" aria-modal="true">
           <div className="competition-content">
             <h3>Unir-se a Competició</h3>
-            <p>Introduïu el nom per unir-vos a aquesta competició:</p>
-            {joinError && <div className="error">{joinError}</div>}
-            <input
-              type="text"
-              value={playerName}
-              onChange={(e) => {
-                setPlayerName(e.target.value);
-                setJoinError(null); // Netejar error quan l'usuari escriu
-              }}
-              placeholder="Nom..."
-              maxLength={20}
-              autoFocus
-              onKeyPress={(e) => {
-                if (e.key === 'Enter' && playerName.trim()) {
-                  const compId = getCompIdFromUrl();
-                  if (compId) {
-                    handleJoinCompetition(compId, playerName);
-                  }
-                }
-              }}
-            />
-            <div className="modal-actions">
-              <button
-                onClick={() => {
-                  const compId = getCompIdFromUrl();
-                  if (compId) {
-                    handleJoinCompetition(compId, playerName);
-                  }
-                }}
-                disabled={!playerName.trim()}
-              >
-                Uneix-me
-              </button>
-              <button
-                onClick={() => {
-                  // Tanca el modal i continua en mode no competitiu
-                  setShowNamePrompt(false);
-                  setCompetitionPlayers([]);
-                  setJoinError(null);
-                  // Neteja el paràmetre de competició de la URL
-                  window.history.pushState({}, '', window.location.pathname);
-                }}
-                className="cancel"
-              >
-                Juga sense competir
-              </button>
-            </div>
+            {!nameConflict ? (
+              <>
+                <p>Introduïu el nom per unir-vos a aquesta competició:</p>
+                {joinError && <div className="error">{joinError}</div>}
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={(e) => {
+                    setPlayerName(e.target.value);
+                    setJoinError(null);
+                  }}
+                  placeholder="Nom..."
+                  maxLength={20}
+                  autoFocus
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && playerName.trim()) {
+                      const compId = getCompIdFromUrl();
+                      if (compId) {
+                        handleJoinCompetition(compId, playerName);
+                      }
+                    }
+                  }}
+                />
+                <div className="modal-actions">
+                  <button
+                    onClick={() => {
+                      const compId = getCompIdFromUrl();
+                      if (compId) {
+                        handleJoinCompetition(compId, playerName);
+                      }
+                    }}
+                    disabled={!playerName.trim()}
+                  >
+                    Uneix-me
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowNamePrompt(false);
+                      setCompetitionPlayers([]);
+                      setJoinError(null);
+                      setNameConflict(null);
+                      setVerificationWord('');
+                      window.history.pushState({}, '', window.location.pathname);
+                    }}
+                    className="cancel"
+                  >
+                    Juga sense competir
+                  </button>
+                </div>
+              </>
+            ) : nameConflict.te_paraules ? (
+              <>
+                <p>El nom <strong>{playerName}</strong> ja està en ús.</p>
+                <p>Per verificar que ets tu, introdueix una de les paraules que has provat:</p>
+                {joinError && <div className="error">{joinError}</div>}
+                <input
+                  type="text"
+                  value={verificationWord}
+                  onChange={(e) => {
+                    setVerificationWord(e.target.value);
+                    setJoinError(null);
+                  }}
+                  placeholder="Paraula de verificació..."
+                  maxLength={50}
+                  autoFocus
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && verificationWord.trim()) {
+                      const compId = getCompIdFromUrl();
+                      if (compId) {
+                        handleJoinCompetition(compId, playerName, verificationWord.trim());
+                      }
+                    }
+                  }}
+                />
+                <div className="modal-actions">
+                  <button
+                    onClick={() => {
+                      const compId = getCompIdFromUrl();
+                      if (compId) {
+                        handleJoinCompetition(compId, playerName, verificationWord.trim());
+                      }
+                    }}
+                    disabled={!verificationWord.trim()}
+                  >
+                    Verificar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setNameConflict(null);
+                      setJoinError(null);
+                      setVerificationWord('');
+                      setPlayerName('');
+                    }}
+                    className="cancel"
+                  >
+                    Canviar de nom
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p>El nom <strong>{playerName}</strong> ja està en ús en aquesta competició.</p>
+                {joinError && <div className="error">{joinError}</div>}
+                <div className="modal-actions">
+                  <button
+                    onClick={() => {
+                      setNameConflict(null);
+                      setJoinError(null);
+                      setPlayerName('');
+                    }}
+                  >
+                    Triar un altre nom
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowNamePrompt(false);
+                      setCompetitionPlayers([]);
+                      setJoinError(null);
+                      setNameConflict(null);
+                      setVerificationWord('');
+                      window.history.pushState({}, '', window.location.pathname);
+                    }}
+                    className="cancel"
+                  >
+                    Juga sense competir
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
