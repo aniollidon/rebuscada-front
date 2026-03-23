@@ -882,18 +882,18 @@ function App() {
       });
 
       if (!response.ok) {
-        let errorData: any = {};
+        let data: any = {};
         try {
-          errorData = await response.json();
+          data = await response.json();
         } catch {
           // Si no es pot parsejar el JSON, usar el status text
         }
-        const detail = errorData.detail;
         
         // Gestionar conflicte de nom (409)
-        if (response.status === 409 && typeof detail === 'object' && detail?.nom_existent) {
-          setNameConflict({ te_paraules: detail.te_paraules });
-          if (!detail.te_paraules) {
+        // El servidor retorna directament {message, nom_existent, te_paraules}
+        if (response.status === 409 && data.nom_existent) {
+          setNameConflict({ te_paraules: !!data.te_paraules });
+          if (!data.te_paraules) {
             setJoinError('Aquest nom ja està en ús. Tria un altre nom.');
           } else {
             setJoinError('Aquest nom ja està en ús. Per verificar que ets tu, introdueix una de les paraules que has provat.');
@@ -903,13 +903,13 @@ function App() {
         
         // Error de verificació (403)
         if (response.status === 403) {
-          const msg403 = typeof detail === 'string' ? detail : 'La paraula de verificació no és correcta. Torna-ho a provar.';
-          setJoinError(msg403);
+          setJoinError(data.message || 'La paraula de verificació no és correcta. Torna-ho a provar.');
           return;
         }
         
-        const msg = typeof detail === 'string' ? detail : 'Hi ha un error en unir-se a la competició';
-        throw new Error(msg);
+        // Altres errors
+        const msg = data.message || data.detail || 'Hi ha un error en unir-se a la competició';
+        throw new Error(typeof msg === 'string' ? msg : 'Hi ha un error en unir-se a la competició');
       }
 
       const data = await response.json();
