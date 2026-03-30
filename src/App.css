@@ -49,6 +49,167 @@ body {
   color: #5d5317;
 }
 
+.proposed-words-panel {
+  margin-top: 0.9rem;
+  padding: 0.9rem;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef7ff 100%);
+  border: 1px solid #cfe6ff;
+  border-radius: 10px;
+  text-align: left;
+  animation: proposedFadeIn 240ms ease;
+}
+
+.proposed-words-panel.closing {
+  pointer-events: none;
+  animation: simplePanelExit 320ms ease forwards;
+}
+
+.proposed-words-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+
+.proposed-words-header span {
+  color: #456;
+  font-size: 0.85rem;
+}
+
+.simple-goal-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(90deg, #d7ecff 0%, #eaf6ff 100%);
+  border: 1px solid #b9dcff;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  margin-bottom: 0.45rem;
+  color: #184a78;
+  font-size: 0.9rem;
+}
+
+.simple-goal-countdown {
+  min-width: 3.4rem;
+  text-align: right;
+  font-size: 1rem;
+  color: #0c3f6a;
+  animation: goalPulse 1s ease-in-out infinite;
+}
+
+.simple-goal-track {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-bottom: 0.7rem;
+}
+
+.simple-goal-step {
+  height: 6px;
+  border-radius: 999px;
+  background: #d7e9fb;
+  transition: transform 200ms ease, background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.simple-goal-step.done {
+  background: linear-gradient(90deg, #6ccf88, #47b86a);
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.12);
+  transform: scaleY(1.12);
+}
+
+.proposed-words-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.proposed-words-body {
+  min-height: 214px;
+  display: flex;
+  align-items: center;
+}
+
+.proposed-word-button {
+  border: 1px solid #9ec5f5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f3f67;
+  font-weight: 600;
+  padding: 0.5rem 0.65rem;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.proposed-words-grid-animated .proposed-word-button {
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+  animation: proposedWordIn 260ms ease forwards;
+}
+
+.proposed-word-button:hover {
+  transform: translateY(-1px);
+  background: #eef6ff;
+  box-shadow: 0 3px 8px rgba(37, 89, 148, 0.2);
+}
+
+.proposed-words-loading {
+  color: #456;
+  font-size: 0.9rem;
+  padding: 0.35rem 0;
+  width: 100%;
+  text-align: center;
+}
+
+@keyframes proposedFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes simplePanelExit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
+@keyframes proposedWordIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes goalPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.82;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.82;
+  }
+}
+
 .App {
   text-align: center;
   min-height: 100vh;
@@ -335,6 +496,64 @@ form {
   text-align: center;
 }
 
+.simple-exit-message {
+  background: linear-gradient(180deg, #f8fbff 0%, #eef7ff 100%);
+  border: 1px solid #cfe6ff;
+  border-radius: 10px;
+  padding: 0.85rem 0.9rem;
+  margin-top: 0.9rem;
+  margin-bottom: 0.95rem;
+  color: #16476f;
+  text-align: left;
+  box-shadow: 0 2px 10px rgba(37, 89, 148, 0.14);
+  animation: simplexitMessageIn 300ms ease;
+}
+
+.simple-exit-message-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.simple-exit-message-head strong {
+  display: block;
+  color: #0f3f67;
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+}
+
+.simple-exit-message-head span {
+  font-size: 0.8rem;
+  color: #456;
+}
+
+.simple-exit-message-title {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: #0c3f6a;
+  font-size: 1rem;
+}
+
+.simple-exit-message p {
+  margin: 0;
+  color: #2a587b;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+@keyframes simplexitMessageIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .highlighted {
   border: 2px solid #3498db;
   box-shadow: 0 0 10px rgba(52, 152, 219, 0.5);
@@ -399,6 +618,7 @@ form button[type="submit"] {
   min-width: 150px;
   box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.2);
   border-radius: 4px;
+  overflow: hidden;
   z-index: 1000;
   right: 0;
   top: 100%;
@@ -413,6 +633,7 @@ form button[type="submit"] {
 .dropdown-link {
   background: none;
   border: none;
+  box-sizing: border-box;
   padding: 12px 16px;
   text-decoration: none;
   display: block;
@@ -441,6 +662,14 @@ form button[type="submit"] {
 }
 
 .dropdown-item:last-child {
+  border-radius: 0 0 4px 4px;
+}
+
+.dropdown-link:first-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.dropdown-link:last-child {
   border-radius: 0 0 4px 4px;
 }
 
@@ -1348,9 +1577,30 @@ form button[type="submit"] {
   max-width: 500px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   text-align: left;
+  position: relative;
   opacity: 0;
   animation: fadeInInstructions 0.5s ease-in forwards;
   animation-delay: 0.3s;
+}
+
+.game-instructions-close {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.6rem;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: 6px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.game-instructions-close:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
 }
 
 @keyframes fadeInInstructions {

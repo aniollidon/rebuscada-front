@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
+import confetti from 'canvas-confetti';
 import './App.css';
+import {
+  type GameMode,
+  getModeFromUrl,
+  saveGameMode,
+  loadGameMode,
+  markSimpleModeUsed,
+  hasUsedSimpleMode,
+  fetchProposedWords,
+  shouldTransitionToExpert,
+  countClosestWords,
+} from './gameMode';
 
 interface Intent {
   paraula: string;
@@ -73,6 +85,7 @@ const COMPETITION_KEY = 'rebuscada-competition';
 const CURRENT_GAME_ID_KEY = 'rebuscada-current-game-id';
 const VERSION_KEY = 'rebuscada-api-version';
 const SESSION_ID_KEY = 'rebuscada-session-id';
+const ALPHA_BANNER_DISMISSED_KEY = 'rebuscada-alpha-banner-dismissed';
 
 // Genera o recupera un ID de sessió persistent per estadístiques
 function getSessionId(): string {
@@ -138,9 +151,16 @@ function fromRoman(roman: string): number | null {
 function App() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Control del bàner de versió alfa (es pot ocultar amb REACT_APP_SHOW_ALPHA_BANNER=false)
-  const [showAlphaBanner, setShowAlphaBanner] = useState(
-    process.env.REACT_APP_SHOW_ALPHA_BANNER === 'false' ? false : true
-  );
+  const [showAlphaBanner, setShowAlphaBanner] = useState(() => {
+    if (process.env.REACT_APP_SHOW_ALPHA_BANNER === 'false') {
+      return false;
+    }
+    try {
+      return localStorage.getItem(ALPHA_BANNER_DISMISSED_KEY) !== '1';
+    } catch {
+      return true;
+    }
+  });
   const [guess, setGuess] = useState('');
   const [intents, setIntents] = useState<Intent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +180,15 @@ function App() {
   const [rankingError, setRankingError] = useState<string | null>(null);
   const [rankingTotal, setRankingTotal] = useState<number | null>(null);
   const [surrendered, setSurrendered] = useState(false);
+  const [gameMode, setGameMode] = useState<GameMode>('expert');
+  const [proposedWords, setProposedWords] = useState<string[]>([]);
+  const [loadingProposed, setLoadingProposed] = useState(false);
+  const [closestWordsCount, setClosestWordsCount] = useState(0);
+  const [proposedBatchId, setProposedBatchId] = useState(0);
+  const [isSimplePanelClosing, setIsSimplePanelClosing] = useState(false);
+  const [showSimpleExitMessage, setShowSimpleExitMessage] = useState(false);
+  const [showGameInstructions, setShowGameInstructions] = useState(true);
+  const simpleExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Estats per jocs anteriors
   const [showPreviousGames, setShowPreviousGames] = useState(false);
@@ -189,6 +218,7 @@ function App() {
   const [playerName, setPlayerName] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showSurrenderConfirm, setShowSurrenderConfirm] = useState(false);
   const [showSwitchCompetition, setShowSwitchCompetition] = useState(false);
   const [pendingCompId, setPendingCompId] = useState<string | null>(null);
   const [showExpiredCompetition, setShowExpiredCompetition] = useState(false);
@@ -197,6 +227,25 @@ function App() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [nameConflict, setNameConflict] = useState<{ te_paraules: boolean } | null>(null);
   const [verificationWord, setVerificationWord] = useState('');
+
+  const dismissAlphaBanner = () => {
+    setShowAlphaBanner(false);
+    try {
+      localStorage.setItem(ALPHA_BANNER_DISMISSED_KEY, '1');
+    } catch {
+      // Ignorar errors de quota/permisos i continuar sense persistència
+    }
+  };
+
+  const isSimpleModeUsedForCurrentGame = () => {
+    if (gameMode === 'simple') {
+      return true;
+    }
+    if (currentGameId === null) {
+      return false;
+    }
+    return hasUsedSimpleMode(currentGameId);
+  };
 
   // Funcions per gestionar localStorage (múltiples jocs)
   const saveGameState = (gameState: GameState) => {
@@ -470,13 +519,27 @@ function App() {
       
       setCurrentGameId(gameInfo.id);
       setRebuscadaActual(gameInfo.name);
+
+        // Inicialitzar mode de joc: URL (?mode=simple) té prioritat sobre localStorage
+        const modeFromUrl = getModeFromUrl();
+        const loadedMode = modeFromUrl || loadGameMode(gameInfo.id);
+        const normalizedMode: GameMode = loadedMode === 'simple' ? 'simple' : 'expert';
+        setGameMode(normalizedMode);
+        saveGameMode(normalizedMode, gameInfo.id);
+        if (normalizedMode === 'simple') {
+          markSimpleModeUsed(gameInfo.id);
+        }
       
       // Registrar visita per estadístiques
       try {
         fetch(`${SERVER_URL}/visit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...statsHeaders() },
-          body: JSON.stringify({ rebuscada: gameInfo.name, game_id: gameInfo.id })
+          body: JSON.stringify({
+            rebuscada: gameInfo.name,
+            game_id: gameInfo.id,
+            simple_mode_used: normalizedMode === 'simple' || hasUsedSimpleMode(gameInfo.id),
+          })
         }).catch(() => {}); // Fire and forget
       } catch {}
       
@@ -1062,10 +1125,41 @@ function App() {
     } as React.CSSProperties;
   };
 
+  const launchWinConfetti = () => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    const defaults: confetti.Options = {
+      spread: 360,
+      ticks: 80,
+      gravity: 0.9,
+      decay: 0.94,
+      startVelocity: 30,
+      scalar: 1,
+      zIndex: 3000,
+    };
+
+    const fire = (particleRatio: number, opts: confetti.Options) => {
+      confetti({
+        ...defaults,
+        ...opts,
+        particleCount: Math.floor(180 * particleRatio),
+      });
+    };
+
+    fire(0.25, { spread: 26, startVelocity: 55 });
+    fire(0.2, { spread: 60 });
+    fire(0.35, { spread: 100, decay: 0.92, scalar: 0.9 });
+    fire(0.1, { spread: 120, startVelocity: 25, decay: 0.95, scalar: 1.2 });
+    fire(0.1, { spread: 120, startVelocity: 45 });
+  };
+
   // Envia una paraula al backend (reutilitzat per submit i per clic de suggeriment)
   const submitWord = async (word: string, options?: { keepInput?: boolean }) => {
     const keepInput = options?.keepInput ?? false;
     setError(null);
+    setShowSimpleExitMessage(false);
     const trimmed = (word || '').trim().toLowerCase();
     if (!trimmed) return;
     try {
@@ -1077,6 +1171,8 @@ function App() {
         requestBody.comp_id = competitionInfo.comp_id;
         requestBody.nom_jugador = competitionInfo.nom_jugador;
       }
+      requestBody.mode = gameMode;
+      requestBody.simple_mode_used = isSimpleModeUsedForCurrentGame();
       // Si hi ha paraula personalitzada, indicar-ho al servidor
       if (getWordFromUrl()) {
         requestBody.es_personalitzada = true;
@@ -1132,12 +1228,21 @@ function App() {
       setIntents(prev => [newGuess, ...prev].sort((a, b) => a.posicio - b.posicio));
       setFormesCanoniquesProvades(prev => new Set(prev).add(formaCanonicaResultant));
 
+      const updatedIntents = [newGuess, ...intents];
+      const discoveredClosestWords = countClosestWords(updatedIntents);
+      setClosestWordsCount(discoveredClosestWords);
+
+      if (gameMode === 'simple' && shouldTransitionToExpert(updatedIntents)) {
+        exitSimpleModeWithAnimation();
+      }
+
       if (!keepInput) {
         setGuess('');
       } else {
         setGuess(word);
       }
       if (data.es_correcta) {
+        launchWinConfetti();
         setGameWon(true);
       }
     } catch (err) {
@@ -1155,6 +1260,88 @@ function App() {
     e.preventDefault();
     await submitWord(guess);
   };
+
+  const exitSimpleModeWithAnimation = () => {
+    if (gameMode !== 'simple' || isSimplePanelClosing) {
+      return;
+    }
+
+    setIsSimplePanelClosing(true);
+
+    if (simpleExitTimerRef.current) {
+      clearTimeout(simpleExitTimerRef.current);
+    }
+
+    simpleExitTimerRef.current = setTimeout(() => {
+      setGameMode('expert');
+      setProposedWords([]);
+      setIsSimplePanelClosing(false);
+      setShowSimpleExitMessage(true);
+      if (currentGameId !== null) {
+        saveGameMode('expert', currentGameId);
+      }
+      simpleExitTimerRef.current = null;
+    }, 320);
+  };
+
+  const loadProposedWords = async () => {
+    if (gameMode !== 'simple' || isSimplePanelClosing || !rebuscadaActual || gameWon) {
+      return;
+    }
+    setLoadingProposed(true);
+    try {
+      const excludeWords = intents.map(i => i.paraula);
+      const words = await fetchProposedWords(SERVER_URL, rebuscadaActual, excludeWords);
+      setProposedWords(words);
+      setProposedBatchId(prev => prev + 1);
+    } finally {
+      setLoadingProposed(false);
+    }
+  };
+
+  const handleProposedWordClick = async (word: string) => {
+    await submitWord(word, { keepInput: true });
+    if (gameMode === 'simple' && !gameWon && !isSimplePanelClosing) {
+      await loadProposedWords();
+    }
+  };
+
+  useEffect(() => {
+    setClosestWordsCount(countClosestWords(intents));
+  }, [intents]);
+
+  useEffect(() => {
+    // Si es carrega el mode SIMPLE però ja hi ha 5 verdes descobertes,
+    // amaguem el mode SIMPLE automàticament.
+    if (gameMode === 'simple' && shouldTransitionToExpert(intents)) {
+      exitSimpleModeWithAnimation();
+    }
+  }, [gameMode, intents, currentGameId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    return () => {
+      if (simpleExitTimerRef.current) {
+        clearTimeout(simpleExitTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (gameMode === 'simple' && !gameWon && rebuscadaActual) {
+      loadProposedWords();
+    }
+    if (gameMode === 'expert') {
+      setProposedWords([]);
+    }
+  }, [gameMode, gameWon, rebuscadaActual]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (gameMode === 'simple' && currentGameId !== null) {
+      markSimpleModeUsed(currentGameId);
+    }
+  }, [gameMode, currentGameId]);
+
+  const remainingSimpleTargets = Math.max(0, 5 - closestWordsCount);
 
     const handleWhyNot = async () => {
       if (!invalidWord) return;
@@ -1228,6 +1415,7 @@ function App() {
         requestBody.comp_id = competitionInfo.comp_id;
         requestBody.nom_jugador = competitionInfo.nom_jugador;
       }
+      requestBody.simple_mode_used = isSimpleModeUsedForCurrentGame();
       // Si hi ha paraula personalitzada, indicar-ho al servidor
       if (getWordFromUrl()) {
         requestBody.es_personalitzada = true;
@@ -1269,6 +1457,7 @@ function App() {
       setPistesDonades(prev => prev + 1);
 
       if (newGuess.es_correcta) {
+        launchWinConfetti();
         setGameWon(true);
       }
 
@@ -1291,8 +1480,14 @@ function App() {
     handlePista();
   };
 
+  const handleDropdownRendirse = () => {
+    setIsDropdownOpen(false);
+    setShowSurrenderConfirm(true);
+  };
+
   const handleRendirse = async () => {
     setIsDropdownOpen(false);
+    setShowSurrenderConfirm(false);
     try {
       const requestBody: any = {};
       if (rebuscadaActual && rebuscadaActual !== 'default') {
@@ -1302,6 +1497,7 @@ function App() {
         requestBody.comp_id = competitionInfo.comp_id;
         requestBody.nom_jugador = competitionInfo.nom_jugador;
       }
+      requestBody.simple_mode_used = isSimpleModeUsedForCurrentGame();
       // Si hi ha paraula personalitzada, indicar-ho al servidor
       if (getWordFromUrl()) {
         requestBody.es_personalitzada = true;
@@ -1370,7 +1566,7 @@ function App() {
           <button
             type="button"
             aria-label="Amaga bàner alfa"
-            onClick={() => setShowAlphaBanner(false)}
+            onClick={dismissAlphaBanner}
           >
             ×
           </button>
@@ -1380,6 +1576,25 @@ function App() {
       {!gameWon ? (
         <header className="App-header">
           <div className="input-container">
+              {!gameWon && showGameInstructions && intents.length === 0 && !error && !lastGuess && (
+              <div className="game-instructions">
+                <button
+                  type="button"
+                  className="game-instructions-close"
+                  aria-label="Tanca instruccions"
+                  onClick={() => setShowGameInstructions(false)}
+                >
+                  ×
+                </button>
+                <h3>Com s'hi juga?</h3>
+                <ul>
+                  <li>L'objectiu és endevinar la <strong>paraula rebuscada</strong> (posició #0) amb els mínims intents possibles. Cada paraula té una <strong>posició</strong> segons la proximitat semàntica amb la paraula zero.</li>
+                  <li>La rebuscada només pot ser un verb o un nom comú.</li>
+                  <li><strong> Què és la proximitat semàntica?</strong> És una mesura de la similitud del significat entre paraules. Un algorisme semisupervisat ha ordenat els noms i verbs del diccionari català segons aquesta mesura. Per exemple, un sinònim, un antònim o un hipònim estarà en les posicions més baixes, mentre que una paraula que no hi té cap relació estarà en posicions molt allunyades.</li>
+                  <li> Podeu començar amb una paraula aleatòria, sempre sereu a temps de demanar una <strong> pista</strong> si us encalleu.</li>
+                </ul>
+              </div>
+            )}
             <div className="intent-count">
               Joc: <strong> {currentGameId ? toRoman(currentGameId) : '-'}</strong> | Intents: {intents.length} | Pistes: {pistesDonades}
             </div>
@@ -1419,7 +1634,7 @@ function App() {
                   <button 
                     type="button"
                     className="dropdown-item"
-                    onClick={handleRendirse}
+                    onClick={handleDropdownRendirse}
                     disabled={gameWon}
                   >
                     Rendeix-te
@@ -1465,6 +1680,59 @@ function App() {
                 </div>
               </div>
             </form>
+            {showSimpleExitMessage && (
+              <div className="simple-exit-message" role="status" aria-live="polite">
+                <div className="simple-exit-message-head">
+                  <strong>🤖 PILOT AUTOMÀTIC</strong>
+                  <span>Mode expert activat</span>
+                </div>
+                <strong className="simple-exit-message-title">Ara et toca navegar sol.</strong>
+                <p>Bé! Ja has descobert moltes paraules properes. Amb les paraules que has descobert, tracta de descobrir quina és la rebuscada!</p>
+              </div>
+            )}
+
+            {gameMode === 'simple' && !gameWon && (
+              <div className={`proposed-words-panel ${isSimplePanelClosing ? 'closing' : ''}`}>
+                <div className="proposed-words-header">
+                  <strong>🤖 EN PILOT AUTOMÀTIC</strong>
+                  <span>Per a començar ràpidament us proposem paraules. Trobeu-ne de properes amb els mínims intents.</span>
+                </div>
+                <div className="simple-goal-banner" role="status" aria-live="polite">
+                  <span>Primer objectiu: Aconseguiu-ne 5 de molt properes!</span>
+                  <strong className="simple-goal-countdown">
+                    {remainingSimpleTargets}...
+                  </strong>
+                </div>
+                <div className="simple-goal-track" aria-hidden="true">
+                  {Array.from({ length: 5 }).map((_, idx) => (
+                    <span
+                      key={idx}
+                      className={`simple-goal-step ${idx < closestWordsCount ? 'done' : ''}`}
+                    />
+                  ))}
+                </div>
+                <div className="proposed-words-body">
+                  {loadingProposed ? (
+                    <div className="proposed-words-loading">Carregant propostes...</div>
+                  ) : (
+                    <div key={proposedBatchId} className="proposed-words-grid proposed-words-grid-animated">
+                      {proposedWords.map((word, idx) => (
+                        <button
+                          type="button"
+                          key={`${word}-${idx}`}
+                          className="proposed-word-button"
+                          onClick={() => handleProposedWordClick(word)}
+                          disabled={gameWon || isSimplePanelClosing}
+                          style={{ animationDelay: `${idx * 45}ms` }}
+                        >
+                          {word}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </header>
       ) : (
@@ -1571,17 +1839,6 @@ function App() {
         </div>
       )}
       <div className="intents">
-        {!gameWon && intents.length === 0 && !error && !lastGuess && (
-          <div className="game-instructions">
-            <h3>Com s'hi juga?</h3>
-            <ul>
-              <li>L'objectiu és endevinar la <strong>paraula rebuscada</strong> (posició #0) amb els mínims intents possibles. Cada paraula té una <strong>posició</strong> segons la proximitat semàntica amb la paraula zero.</li>
-              <li>La rebuscada només pot ser un verb o un nom comú.</li>
-              <li><strong> Què és la proximitat semàntica?</strong> És una mesura de la similitud del significat entre paraules. Un algorisme semisupervisat ha ordenat els noms i verbs del diccionari català segons aquesta mesura. Per exemple, un sinònim, un antònim o un hipònim estarà en les posicions més baixes, mentre que una paraula que no hi té cap relació estarà en posicions molt allunyades.</li>
-              <li> Podeu començar amb una paraula aleatòria, sempre sereu a temps de demanar una <strong> pista</strong> si us encalleu.</li>
-            </ul>
-          </div>
-        )}
         {!gameWon && (
           <div className="last-guess">
             {error ? (
@@ -1669,6 +1926,25 @@ function App() {
             </div>
           </div>
         )}
+
+      {showSurrenderConfirm && (
+        <div className="competition-modal" role="dialog" aria-modal="true">
+          <div className="competition-content">
+            <h3>Abandonar partida?</h3>
+            <p>
+              Si us rendiu, es mostrarà la paraula rebuscada i la partida acabarà.
+            </p>
+            <div className="modal-actions">
+              <button onClick={handleRendirse} className="danger">
+                Sí, rendeix-te
+              </button>
+              <button onClick={() => setShowSurrenderConfirm(false)} className="cancel">
+                Continua jugant
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sidebar de competició */}
       {competitionInfo && (
