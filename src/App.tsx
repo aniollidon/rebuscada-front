@@ -27,10 +27,6 @@ interface GameInfo {
   today: string;
 }
 
-interface ErrorResponse {
-  detail: string;
-}
-
 interface WhyNotResponse {
   raó: string;
   suggeriments: string[] | null;
@@ -215,20 +211,6 @@ function App() {
   };
 
   // Resol l'ID de joc a partir del nom de la rebuscada
-  const resolveGameIdByRebuscada = async (name: string): Promise<number | null> => {
-    try {
-      const response = await fetch(`${SERVER_URL}/public-games`);
-      if (response.ok) {
-        const data = await response.json();
-        const game = (data.games || []).find((g: any) => (g.name || '').toLowerCase() === name.toLowerCase());
-        return game ? game.id : null;
-      }
-    } catch (e) {
-      console.warn('Error resolent ID de joc per rebuscada:', e);
-    }
-    return null;
-  };
-
   // Actualitza la URL. Si hi ha compId, NO inclou el joc (enllaç net de competició)
   const updateUrlParams = (params: { compId?: string | null; gameId?: number | null }) => {
     const url = new URL(window.location.href);
@@ -264,24 +246,6 @@ function App() {
     } catch (error) {
       console.warn('Error carregant tots els jocs:', error);
       return {};
-    }
-  };
-
-  const getCurrentGameId = (): number | null => {
-    try {
-      const saved = localStorage.getItem(CURRENT_GAME_ID_KEY);
-      return saved ? parseInt(saved, 10) : null;
-    } catch (error) {
-      return null;
-    }
-  };
-
-  const clearGameState = () => {
-    try {
-      localStorage.removeItem(GAMES_STATE_KEY);
-      localStorage.removeItem(CURRENT_GAME_ID_KEY);
-    } catch (error) {
-      console.warn('Error netejant l\'estat del joc:', error);
     }
   };
 
@@ -640,7 +604,7 @@ function App() {
     };
 
     initializeGame();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Guardar l'estat cada cop que canvien les dades importants
   useEffect(() => {
@@ -660,7 +624,7 @@ function App() {
         saveGameState(gameState);
       }
     }
-  }, [intents, formesCanoniquesProvades, pistesDonades, gameWon, surrendered, rebuscadaActual, currentGameId]);
+  }, [intents, formesCanoniquesProvades, pistesDonades, gameWon, surrendered, rebuscadaActual, currentGameId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sincronitzar estat entre pestanyes
   useEffect(() => {
@@ -714,7 +678,7 @@ function App() {
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [currentGameId, rebuscadaActual, competitionInfo]);
+  }, [currentGameId, rebuscadaActual, competitionInfo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadCompetitionState = async (compId: string): Promise<{ exists: boolean; rebuscada: string | null; game_id: number | null }> => {
     try {
@@ -1356,7 +1320,7 @@ function App() {
         throw new Error('Hi ha un error en abandonar');
       }
 
-      const data = await response.json();
+      await response.json();
       
       setGameWon(true);
       setLastGuess(null);
@@ -1521,7 +1485,8 @@ function App() {
                 else if (i.posicio < 2000) counters.vermell++;
                 else counters.vermellFosc++;
               });
-              const total = intents.length || 1;
+              const _total = intents.length || 1;
+              void _total;
               return (
                 <ul className="color-stats">
                   <li><span className="color-box" style={{ background: '#4caf50' }} /> <strong>{counters.verd}</strong> (&lt;100)</li>
