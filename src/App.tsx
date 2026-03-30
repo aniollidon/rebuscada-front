@@ -1694,11 +1694,11 @@ function App() {
             {gameMode === 'simple' && !gameWon && (
               <div className={`proposed-words-panel ${isSimplePanelClosing ? 'closing' : ''}`}>
                 <div className="proposed-words-header">
-                  <strong>🤖 EN PILOT AUTOMÀTIC</strong>
+                  <strong style={{ minWidth: '111px' }}>🤖 EN PILOT AUTOMÀTIC</strong>
                   <span>Per a començar ràpidament us proposem paraules. Trobeu-ne de properes amb els mínims intents.</span>
                 </div>
                 <div className="simple-goal-banner" role="status" aria-live="polite">
-                  <span>Primer objectiu: Aconseguiu-ne 5 de molt properes!</span>
+                  <span>Aconseguiu-ne 5 de molt properes!</span>
                   <strong className="simple-goal-countdown">
                     {remainingSimpleTargets}...
                   </strong>
