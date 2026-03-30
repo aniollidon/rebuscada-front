@@ -1,46 +1,39 @@
-# Getting Started with Create React App
+# Frontend de Rebuscada
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Aquest frontend s'ha creat amb [Create React App](https://github.com/facebook/create-react-app).
 
-## Available Scripts
+## Scripts disponibles
 
-In the project directory, you can run:
+Des del directori del frontend podeu executar:
 
-### `npm start`
+### npm start
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+Inicia l'aplicació en mode de desenvolupament.
+Obriu [http://localhost:3000](http://localhost:3000) al navegador.
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+La pàgina es recarrega automàticament quan feu canvis.
+Si hi ha errors de lint, es mostren a la consola.
 
-### `npm test`
+### npm test
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Inicia el runner de tests en mode interactiu.
+Podeu consultar més informació a la documentació de [running tests](https://facebook.github.io/create-react-app/docs/running-tests).
 
-### `npm run build`
+### npm run build
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Genera la versió de producció a la carpeta build.
+Empaqueta React en mode de producció i optimitza el rendiment.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+La sortida es minifica i els noms de fitxer inclouen hash.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### npm run eject
 
-### `npm run eject`
+Atenció: aquesta acció és irreversible.
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+Aquest comandament copia tota la configuració (webpack, Babel, ESLint, etc.) dins del projecte perquè la pugueu controlar directament.
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Més informació
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+Podeu consultar la documentació de [Create React App](https://facebook.github.io/create-react-app/docs/getting-started).
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+Per aprendre React, consulteu la [documentació de React](https://reactjs.org/).

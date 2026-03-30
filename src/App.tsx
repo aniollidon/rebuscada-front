@@ -817,7 +817,7 @@ function App() {
       setShowCompetitionExplanation(false);
       setShowCompetitionModal(true);
     } catch (error) {
-      setError('Hi ha un error en crear la competició');
+      setError('S\'ha produït un error en crear la competició.');
       console.error(error);
     }
   };
@@ -858,9 +858,9 @@ function App() {
         if (response.status === 409 && data.nom_existent) {
           setNameConflict({ te_paraules: !!data.te_paraules });
           if (!data.te_paraules) {
-            setJoinError('Aquest nom ja està en ús. Tria un altre nom.');
+            setJoinError('Aquest nom ja està en ús. Trieu un altre nom.');
           } else {
-            setJoinError('Aquest nom ja està en ús. Per verificar que ets tu, introdueix una de les paraules que has provat.');
+            setJoinError('Aquest nom ja està en ús. Per verificar la identitat, introduïu una de les paraules que heu provat.');
           }
           return;
         }
@@ -872,8 +872,8 @@ function App() {
         }
         
         // Altres errors
-        const msg = data.message || data.detail || 'Hi ha un error en unir-se a la competició';
-        throw new Error(typeof msg === 'string' ? msg : 'Hi ha un error en unir-se a la competició');
+        const msg = data.message || data.detail || 'S\'ha produït un error en unir-vos a la competició.';
+        throw new Error(typeof msg === 'string' ? msg : 'S\'ha produït un error en unir-vos a la competició.');
       }
 
       const data = await response.json();
@@ -921,7 +921,7 @@ function App() {
       if (error instanceof Error) {
         setJoinError(error.message);
       } else {
-        setJoinError('Hi ha un error en unir-se a la competició');
+        setJoinError('S\'ha produït un error en unir-vos a la competició.');
       }
       console.error(error);
     }
@@ -946,7 +946,7 @@ function App() {
       setShowLeaveConfirm(false);
       window.location.href = window.location.pathname;
     } catch (error) {
-      setError('Hi ha un error en sortir de la competició');
+      setError('S\'ha produït un error en sortir de la competició.');
       console.error(error);
     }
   };
@@ -1106,10 +1106,10 @@ function App() {
         // Comprovem si és exactament la mateixa paraula que ja s'havia provat
         const paraulaJaProvada = intents.some(i => i.paraula === data.paraula);
         if (paraulaJaProvada) {
-          setError(`Ja s'ha trobat "${data.paraula}".`);
+          setError(`Ja s'ha trobat «${data.paraula}».`);
         } else {
           // És una nova paraula però la seva forma canònica (arrel) ja s'havia trobat
-          setError(`Ja s'ha trobat l'arrel de "${data.paraula}" (${formaCanonicaResultant}).`);
+          setError(`Ja s'ha trobat l'arrel de «${data.paraula}» (${formaCanonicaResultant}).`);
         }
         setLastGuess(null);
         if (!keepInput) {
@@ -1145,7 +1145,7 @@ function App() {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('Hi ha hagut un error de xarxa inesperat');
+        setError('S\'ha produït un error de xarxa inesperat.');
       }
       setLastGuess(null); // Amaguem l'últim intent també en aquests errors
     }
@@ -1242,14 +1242,14 @@ function App() {
 
       if (!response.ok) {
         const errorData = data as any;
-        setError(errorData.detail || 'Hi ha un error en demanar la pista');
+        setError(errorData.detail || 'S\'ha produït un error en demanar la pista.');
         setLastGuess(null);
         return;
       }
       
       const formaCanonicaResultant = data.forma_canonica || data.paraula;
       if (formesCanoniquesProvades.has(formaCanonicaResultant)) {
-        setError(`La pista "${formaCanonicaResultant}" ja s'havia provat.`);
+        setError(`La pista «${formaCanonicaResultant}» ja s'havia provat.`);
         setLastGuess(null);
         return; 
       }
@@ -1276,7 +1276,7 @@ function App() {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('Hi ha hagut un error de xarxa inesperat');
+        setError('S\'ha produït un error de xarxa inesperat.');
       }
       setLastGuess(null);
     }
@@ -1317,7 +1317,7 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error('Hi ha un error en abandonar');
+        throw new Error('S\'ha produït un error en abandonar.');
       }
 
       await response.json();
@@ -1330,7 +1330,7 @@ function App() {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('Hi ha hagut un error de xarxa inesperat');
+        setError('S\'ha produït un error de xarxa inesperat.');
       }
     }
   };
@@ -1422,7 +1422,7 @@ function App() {
                     onClick={handleRendirse}
                     disabled={gameWon}
                   >
-                    Rendir-se
+                    Rendeix-te
                   </button>
                   <button 
                     type="button"
@@ -1537,7 +1537,7 @@ function App() {
                   setLoadingRanking(false);
                 }
               }
-            }}>Veure top 300</button>
+            }}>Mostra el top 300</button>
           </div>
           {showRanking && (
             <div className="ranking-modal" role="dialog" aria-modal="true">
@@ -1577,7 +1577,7 @@ function App() {
             <ul>
               <li>L'objectiu és endevinar la <strong>paraula rebuscada</strong> (posició #0) amb els mínims intents possibles. Cada paraula té una <strong>posició</strong> segons la proximitat semàntica amb la paraula zero.</li>
               <li>La rebuscada només pot ser un verb o un nom comú.</li>
-              <li><strong> Què és la proximitat semàntica?</strong> És una mesura de la similitud del significat entre paraules. Un algoritme semisupervisat ha ordenat els noms i verbs del diccionari català segons aquesta mesura. Per exemple un sinònim, un antònim o un hipònim estarà en les posicions més baixes, mentre que una paraula no que hi té cap relació estarà en posicions molt allunyades.</li>
+              <li><strong> Què és la proximitat semàntica?</strong> És una mesura de la similitud del significat entre paraules. Un algorisme semisupervisat ha ordenat els noms i verbs del diccionari català segons aquesta mesura. Per exemple, un sinònim, un antònim o un hipònim estarà en les posicions més baixes, mentre que una paraula que no hi té cap relació estarà en posicions molt allunyades.</li>
               <li> Podeu començar amb una paraula aleatòria, sempre sereu a temps de demanar una <strong> pista</strong> si us encalleu.</li>
             </ul>
           </div>
@@ -1639,7 +1639,7 @@ function App() {
         {showWhyNot && (
           <div className="why-not-modal" role="dialog" aria-modal="true">
             <div className="why-not-content">
-              <h3>Per què "{invalidWord}" no és vàlida?</h3>
+              <h3>Per què «{invalidWord}» no és vàlida?</h3>
               <button className="close" onClick={() => setShowWhyNot(false)}>×</button>
             
               {loadingWhyNot && <p>Carregant explicació...</p>}
@@ -1650,7 +1650,7 @@ function App() {
                 
                   {whyNotData.suggeriments && whyNotData.suggeriments.length > 0 && (
                     <div className="suggestions">
-                      <h4>Potser volies dir:</h4>
+                      <h4>Potser volíeu dir:</h4>
                       <div className="suggestions-list">
                         {whyNotData.suggeriments.map((sugg, idx) => (
                           <button
@@ -1739,7 +1739,7 @@ function App() {
       {showCompetitionExplanation && (
         <div className="competition-modal" role="dialog" aria-modal="true">
           <div className="competition-content">
-            <h3>Mode Competitiu</h3>
+            <h3>Mode competitiu</h3>
             <button className="close" onClick={() => setShowCompetitionExplanation(false)}>×</button>
             <div className="explanation-text">
               <p>
@@ -1861,7 +1861,7 @@ function App() {
       {showNamePrompt && (
         <div className="competition-modal" role="dialog" aria-modal="true">
           <div className="competition-content">
-            <h3>Unir-se a Competició</h3>
+            <h3>Uneix-te a la competició</h3>
             {!nameConflict ? (
               <>
                 <p>Introduïu el nom per unir-vos a aquesta competició:</p>
@@ -1915,7 +1915,7 @@ function App() {
             ) : nameConflict.te_paraules ? (
               <>
                 <p>El nom <strong>{playerName}</strong> ja està en ús.</p>
-                <p>Per verificar que ets tu, introdueix una de les paraules que has provat:</p>
+                <p>Per verificar la identitat, introduïu una de les paraules que heu provat:</p>
                 {joinError && <div className="error">{joinError}</div>}
                 <input
                   type="text"
@@ -1973,7 +1973,7 @@ function App() {
                       setPlayerName('');
                     }}
                   >
-                    Triar un altre nom
+                    Tria un altre nom
                   </button>
                   <button
                     onClick={() => {
