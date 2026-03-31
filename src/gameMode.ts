@@ -6,6 +6,11 @@ const SIMPLE_MODE_USED_KEY = 'rebuscada-simple-mode-used';
 
 export type GameMode = 'simple' | 'expert';
 
+export interface ProposedWordItem {
+  word: string;
+  isTop100: boolean;
+}
+
 /**
  * Get game mode from URL parameter (?mode=simple)
  */
@@ -100,7 +105,7 @@ export async function fetchProposedWords(
   serverUrl: string,
   rebuscada: string,
   excludeWords: string[]
-): Promise<string[]> {
+): Promise<ProposedWordItem[]> {
   try {
     const excludeParam = excludeWords.length > 0 ? `&exclude=${excludeWords.join(',')}` : '';
     const response = await fetch(
@@ -113,7 +118,19 @@ export async function fetchProposedWords(
     }
     
     const data = await response.json();
-    return data.paraules || [];
+    const words: string[] = data.paraules || [];
+    const top100Set = new Set<string>((data.top100_paraules || []).map((w: string) => w.toLowerCase().trim()));
+    const proposedItems = words.map((word) => ({
+      word,
+      isTop100: top100Set.has(word.toLowerCase().trim()),
+    }));
+
+    console.log(
+      '[SIMPLE] Propostes rebudes:',
+      proposedItems.map((item) => `${item.word} (top100=${item.isTop100 ? 'sí' : 'no'})`).join(', ')
+    );
+
+    return proposedItems;
   } catch (error) {
     console.warn('Error fetching proposed words:', error);
     return [];

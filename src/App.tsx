@@ -3,6 +3,7 @@ import confetti from 'canvas-confetti';
 import './App.css';
 import {
   type GameMode,
+  type ProposedWordItem,
   getModeFromUrl,
   saveGameMode,
   loadGameMode,
@@ -74,6 +75,16 @@ interface PistaResponse {
   forma_canonica: string | null;
   posicio: number;
   total_paraules: number;
+}
+
+type ProposedSlotPhase = 'idle' | 'entering' | 'leaving';
+
+interface ProposedWordSlot {
+  slotId: number;
+  word: string;
+  isTop100: boolean;
+  cycles: number;
+  phase: ProposedSlotPhase;
 }
 
 // Constant per la URL del servidor (des de variables d'entorn)
@@ -181,14 +192,16 @@ function App() {
   const [rankingTotal, setRankingTotal] = useState<number | null>(null);
   const [surrendered, setSurrendered] = useState(false);
   const [gameMode, setGameMode] = useState<GameMode>('expert');
-  const [proposedWords, setProposedWords] = useState<string[]>([]);
+  const [proposedWords, setProposedWords] = useState<ProposedWordSlot[]>([]);
   const [loadingProposed, setLoadingProposed] = useState(false);
+  const [isReplacingProposedWords, setIsReplacingProposedWords] = useState(false);
   const [closestWordsCount, setClosestWordsCount] = useState(0);
-  const [proposedBatchId, setProposedBatchId] = useState(0);
   const [isSimplePanelClosing, setIsSimplePanelClosing] = useState(false);
   const [showSimpleExitMessage, setShowSimpleExitMessage] = useState(false);
   const [showGameInstructions, setShowGameInstructions] = useState(true);
   const simpleExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replacementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextProposedSlotIdRef = useRef(1);
 
   // Estats per jocs anteriors
   const [showPreviousGames, setShowPreviousGames] = useState(false);
@@ -1156,12 +1169,12 @@ function App() {
   };
 
   // Envia una paraula al backend (reutilitzat per submit i per clic de suggeriment)
-  const submitWord = async (word: string, options?: { keepInput?: boolean }) => {
+  const submitWord = async (word: string, options?: { keepInput?: boolean }): Promise<GuessResponse | null> => {
     const keepInput = options?.keepInput ?? false;
     setError(null);
     setShowSimpleExitMessage(false);
     const trimmed = (word || '').trim().toLowerCase();
-    if (!trimmed) return;
+    if (!trimmed) return null;
     try {
       const requestBody: any = { paraula: trimmed };
       if (rebuscadaActual && rebuscadaActual !== 'default') {
@@ -1190,7 +1203,7 @@ function App() {
         setError(errorData.detail || 'Error inesperat');
         setInvalidWord(trimmed); // Guardem la paraula invàlida per /whynot
         setLastGuess(null); // Amaguem l'últim intent per mostrar l'error
-        return; // Aturem l'execució aquí
+        return null; // Aturem l'execució aquí
       }
 
       // Si tot va bé, netegem la paraula invàlida
@@ -1213,7 +1226,7 @@ function App() {
         } else {
           setGuess(word);
         }
-        return; // No processem l'intent repetit
+        return null; // No processem l'intent repetit
       }
 
       const newGuess: Intent = {
@@ -1245,6 +1258,7 @@ function App() {
         launchWinConfetti();
         setGameWon(true);
       }
+      return data;
     } catch (err) {
       // Aquest catch és per a errors de xarxa, no per a respostes de l'API
       if (err instanceof Error) {
@@ -1253,6 +1267,7 @@ function App() {
         setError('S\'ha produït un error de xarxa inesperat.');
       }
       setLastGuess(null); // Amaguem l'últim intent també en aquests errors
+      return null;
     }
   };
 
@@ -1275,6 +1290,7 @@ function App() {
     simpleExitTimerRef.current = setTimeout(() => {
       setGameMode('expert');
       setProposedWords([]);
+      setIsReplacingProposedWords(false);
       setIsSimplePanelClosing(false);
       setShowSimpleExitMessage(true);
       if (currentGameId !== null) {
@@ -1282,6 +1298,42 @@ function App() {
       }
       simpleExitTimerRef.current = null;
     }, 320);
+  };
+
+  const buildProposedSlots = (words: ProposedWordItem[]): ProposedWordSlot[] => {
+    return words.slice(0, 10).map((item) => ({
+      slotId: nextProposedSlotIdRef.current++,
+      word: item.word,
+      isTop100: item.isTop100,
+      cycles: 0,
+      phase: 'entering',
+    }));
+  };
+
+  const fetchUniqueProposedWords = async (excludeWords: string[], needed: number): Promise<ProposedWordItem[]> => {
+    if (!rebuscadaActual || needed <= 0) {
+      return [];
+    }
+
+    const seen = new Set(excludeWords.map((w) => w.toLowerCase().trim()));
+    const picked: ProposedWordItem[] = [];
+
+    for (let attempt = 0; attempt < 4 && picked.length < needed; attempt++) {
+      const words = await fetchProposedWords(SERVER_URL, rebuscadaActual, Array.from(seen));
+      for (const item of words) {
+        const normalized = item.word.toLowerCase().trim();
+        if (seen.has(normalized)) {
+          continue;
+        }
+        seen.add(normalized);
+        picked.push(item);
+        if (picked.length >= needed) {
+          break;
+        }
+      }
+    }
+
+    return picked;
   };
 
   const loadProposedWords = async () => {
@@ -1292,17 +1344,91 @@ function App() {
     try {
       const excludeWords = intents.map(i => i.paraula);
       const words = await fetchProposedWords(SERVER_URL, rebuscadaActual, excludeWords);
-      setProposedWords(words);
-      setProposedBatchId(prev => prev + 1);
+      setProposedWords(buildProposedSlots(words));
     } finally {
       setLoadingProposed(false);
     }
   };
 
-  const handleProposedWordClick = async (word: string) => {
-    await submitWord(word, { keepInput: true });
-    if (gameMode === 'simple' && !gameWon && !isSimplePanelClosing) {
-      await loadProposedWords();
+  const handleProposedWordClick = async (slotId: number, word: string) => {
+    if (loadingProposed || isReplacingProposedWords) {
+      return;
+    }
+
+    const result = await submitWord(word, { keepInput: true });
+    if (!result?.es_correcta && gameMode === 'simple' && !isSimplePanelClosing) {
+      setIsReplacingProposedWords(true);
+
+      const activeSlots = proposedWords;
+      const clickedIndex = activeSlots.findIndex((slot) => slot.slotId === slotId);
+      if (clickedIndex === -1) {
+        setIsReplacingProposedWords(false);
+        return;
+      }
+
+      const replacementIndexes = new Set<number>([clickedIndex]);
+      activeSlots.forEach((slot, index) => {
+        if (index !== clickedIndex && slot.cycles + 1 >= 3) {
+          replacementIndexes.add(index);
+        }
+      });
+
+      setProposedWords((prev) => prev.map((slot, index) => {
+        if (replacementIndexes.has(index)) {
+          return { ...slot, phase: 'leaving' };
+        }
+        if (index === clickedIndex) {
+          return slot;
+        }
+        return { ...slot, cycles: slot.cycles + 1 };
+      }));
+
+      const excludeWords = [
+        ...intents.map((intent) => intent.paraula),
+        ...activeSlots.map((slot) => slot.word),
+        ...(result ? [result.paraula] : []),
+      ];
+      const replacements = await fetchUniqueProposedWords(excludeWords, replacementIndexes.size);
+
+      if (replacementTimerRef.current) {
+        clearTimeout(replacementTimerRef.current);
+      }
+
+      replacementTimerRef.current = setTimeout(async () => {
+        let replacementCursor = 0;
+        const nextSlots = activeSlots.map((slot, index) => {
+          if (!replacementIndexes.has(index)) {
+            return {
+              ...slot,
+              phase: slot.phase === 'entering' ? 'idle' as const : slot.phase,
+              cycles: slot.cycles + (index === clickedIndex ? 0 : 1),
+            };
+          }
+          const replacementItem = replacements[replacementCursor];
+          replacementCursor += 1;
+          if (!replacementItem) {
+            return { ...slot, phase: 'idle' as const, cycles: 0 };
+          }
+          return {
+            slotId: nextProposedSlotIdRef.current++,
+            word: replacementItem.word,
+            isTop100: replacementItem.isTop100,
+            cycles: 0,
+            phase: 'entering' as const,
+          };
+        });
+
+        const hasTop100 = nextSlots.some((slot) => slot.isTop100);
+        if (!hasTop100) {
+          setProposedWords([]);
+          await loadProposedWords();
+        } else {
+          setProposedWords(nextSlots);
+        }
+
+        setIsReplacingProposedWords(false);
+        replacementTimerRef.current = null;
+      }, 180);
     }
   };
 
@@ -1323,6 +1449,9 @@ function App() {
       if (simpleExitTimerRef.current) {
         clearTimeout(simpleExitTimerRef.current);
       }
+      if (replacementTimerRef.current) {
+        clearTimeout(replacementTimerRef.current);
+      }
     };
   }, []);
 
@@ -1332,6 +1461,7 @@ function App() {
     }
     if (gameMode === 'expert') {
       setProposedWords([]);
+      setIsReplacingProposedWords(false);
     }
   }, [gameMode, gameWon, rebuscadaActual]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1695,10 +1825,10 @@ function App() {
               <div className={`proposed-words-panel ${isSimplePanelClosing ? 'closing' : ''}`}>
                 <div className="proposed-words-header">
                   <strong style={{ minWidth: '111px' }}>🤖 EN PILOT AUTOMÀTIC</strong>
-                  <span>Per a començar ràpidament us proposem paraules. Trobeu-ne de properes amb els mínims intents.</span>
+                  <span>Per accelerar el joc us proposem 10 paraules. Descobriu-ne les verdes amb els mínims intents.</span>
                 </div>
                 <div className="simple-goal-banner" role="status" aria-live="polite">
-                  <span>Aconseguiu-ne 5 de molt properes!</span>
+                  <span>Aconseguiu 5 paraules molt properes a la rebuscada!</span>
                   <strong className="simple-goal-countdown">
                     {remainingSimpleTargets}...
                   </strong>
@@ -1715,17 +1845,24 @@ function App() {
                   {loadingProposed ? (
                     <div className="proposed-words-loading">Carregant propostes...</div>
                   ) : (
-                    <div key={proposedBatchId} className="proposed-words-grid proposed-words-grid-animated">
-                      {proposedWords.map((word, idx) => (
+                    <div className="proposed-words-grid">
+                      {proposedWords.map((slot, idx) => (
                         <button
                           type="button"
-                          key={`${word}-${idx}`}
-                          className="proposed-word-button"
-                          onClick={() => handleProposedWordClick(word)}
-                          disabled={gameWon || isSimplePanelClosing}
+                          key={slot.slotId}
+                          className={`proposed-word-button proposed-word-button-${slot.phase}`}
+                          onClick={() => handleProposedWordClick(slot.slotId, slot.word)}
+                          disabled={gameWon || isSimplePanelClosing || loadingProposed || isReplacingProposedWords || slot.phase === 'leaving'}
                           style={{ animationDelay: `${idx * 45}ms` }}
+                          onAnimationEnd={() => {
+                            if (slot.phase === 'entering') {
+                              setProposedWords((prev) => prev.map((candidate) => (
+                                candidate.slotId === slot.slotId ? { ...candidate, phase: 'idle' } : candidate
+                              )));
+                            }
+                          }}
                         >
-                          {word}
+                          {slot.word}
                         </button>
                       ))}
                     </div>

@@ -142,10 +142,15 @@ body {
   transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
 }
 
-.proposed-words-grid-animated .proposed-word-button {
+.proposed-word-button-entering {
   opacity: 0;
   transform: translateY(6px) scale(0.98);
   animation: proposedWordIn 260ms ease forwards;
+}
+
+.proposed-word-button-leaving {
+  opacity: 1;
+  animation: proposedWordOut 170ms ease forwards;
 }
 
 .proposed-word-button:hover {
@@ -192,6 +197,17 @@ body {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes proposedWordOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.97);
   }
 }
 
